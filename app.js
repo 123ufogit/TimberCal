@@ -83,35 +83,57 @@ document.querySelectorAll('input[name="basemap"]').forEach(radio => {
 });
 
 /* ---- オーバーレイ1：傾斜区分（高精細1mカラー画像、初期非表示・透過率40%） ---- */
-// 傾斜区分専用のカスタムペインを作成 (ベースマップ: 200 と GeoJSON/マーカー: 400~600 の中間 z-index: 250 に設定)
-map.createPane('slopePane');
-map.getPane('slopePane').style.zIndex = 250;
-map.getPane('slopePane').style.pointerEvents = 'none';
-
 const slopeBounds = [
   [36.5806468, 136.7643842], // SW
   [36.5942384, 136.7866666]  // NE
 ];
 
-const slopeImageUrl = (typeof window !== 'undefined' && window.slopeOverlayData)
-  ? window.slopeOverlayData
-  : 'data/slope_overlay.png';
+// 複数の画像パス候補（Base64 または ファイルパス）
+const slopeSources = [
+  (typeof window !== 'undefined' && window.slopeOverlayData) ? window.slopeOverlayData : null,
+  'data/slope_overlay.png',
+  './data/slope_overlay.png',
+  'slope_overlay.png'
+].filter(Boolean);
 
+let currentSlopeSrcIdx = 0;
 const slopeOverlay = L.imageOverlay(
-  slopeImageUrl,
+  slopeSources[0],
   slopeBounds,
   {
     opacity: 0.4,
-    pane: 'slopePane'
+    interactive: false
   }
-); // 初期非表示のため addTo(map) しない
+);
+
+// エラー時の自動フォールバック処理
+if (slopeOverlay._image) {
+  slopeOverlay._image.onerror = function () {
+    currentSlopeSrcIdx++;
+    if (currentSlopeSrcIdx < slopeSources.length) {
+      console.log('Retrying slope overlay source:', slopeSources[currentSlopeSrcIdx]);
+      slopeOverlay.setUrl(slopeSources[currentSlopeSrcIdx]);
+    }
+  };
+}
 
 /* 傾斜区分 ON/OFF */
 document.getElementById('toggle-slope')
   .addEventListener('change', function () {
-    this.checked
-      ? map.addLayer(slopeOverlay)
-      : map.removeLayer(slopeOverlay);
+    if (this.checked) {
+      map.addLayer(slopeOverlay);
+      slopeOverlay.bringToBack();
+      // レイヤー順序の調整（ゾーニングはさらに背面、樹木は最前面）
+      if (zoningGeoJSON && map.hasLayer(zoningLayerGroup)) {
+        zoningGeoJSON.bringToBack();
+      }
+      if (treesGeoJSON && map.hasLayer(treesLayerGroup)) {
+        treesGeoJSON.bringToFront();
+      }
+      showToast('📐 傾斜区分図を表示しました');
+    } else {
+      map.removeLayer(slopeOverlay);
+    }
   });
 
 /* 傾斜区分 透過率スライダー */
