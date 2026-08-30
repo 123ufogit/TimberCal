@@ -221,10 +221,9 @@ function getSpeciesColor(species) {
 
 
 /* =========================================================================
-   C. GeoJSONレイヤ読み込み
+   C. GeoJSONレイヤ読み込み (data/ フォルダ内のファイルを明示読み込み)
    =========================================================================
-   index.html と同じフォルダに配置すること：
-     trees.geojson / zoning.geojson / codrat.geojson
+     data/trees.geojson / data/zoning.geojson / 20mesh.geojson
    ========================================================================= */
 
 /* 各レイヤを格納する LayerGroup */
@@ -417,17 +416,22 @@ async function loadZoningData() {
     const data = await fetchJson([
       'data/zoning.geojson',
       './data/zoning.geojson',
-      'zoning.geojson'
+      'zoning.geojson',
+      './zoning.geojson'
     ]);
     renderZoningLayer(data);
+    return;
   } catch (err) {
-    console.warn('data/zoning.geojson 読み込み失敗:', err);
-    if (window.location.protocol === 'file:') {
-      showToast('⚠ file://プロトコルではセキュリティ制限によりzoning.geojsonが直接フェッチできません。\ndata/zoning.js またはローカルWebサーバーをご利用ください。');
-    } else {
-      showToast('⚠ data/zoning.geojson が見つかりません');
-    }
+    console.warn('data/zoning.geojson 読み込み失敗, 1秒後に window.zoningGeoJsonData を再確認します:', err);
   }
+
+  // 3. 遅延再確認（スクリプトタグのロード順序による未定義対策）
+  setTimeout(() => {
+    if (typeof window !== 'undefined' && window.zoningGeoJsonData && !zoningGeoJSON) {
+      console.log('Loaded zoning on retry from window.zoningGeoJsonData');
+      renderZoningLayer(window.zoningGeoJsonData);
+    }
+  }, 1000);
 }
 
 loadZoningData();
