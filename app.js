@@ -93,8 +93,12 @@ const slopeBounds = [
   [36.5942384, 136.7866666]  // NE
 ];
 
+const slopeImageUrl = (typeof window !== 'undefined' && window.slopeOverlayData)
+  ? window.slopeOverlayData
+  : 'data/slope_overlay.png';
+
 const slopeOverlay = L.imageOverlay(
-  'data/slope_overlay.png',
+  slopeImageUrl,
   slopeBounds,
   {
     opacity: 0.4,

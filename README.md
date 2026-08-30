@@ -81,10 +81,12 @@ TimberCal-main/
 ├── data/
 │   ├── trees.geojson           # 単木調査データ (691件 WGS84)
 │   ├── trees.js                # trees.geojson JSデータ (オフライン/file://対応)
+│   ├── zoning.geojson          # ゾーニングデータ
+│   ├── zoning.js               # zoning.geojson JSデータ (オフライン/file://対応)
 │   ├── 07HD811_DEM.tif         # 国土地理院 2mメッシュ DEM (3.0MB GeoTIFF)
-│   ├── dem_data.json           # DEM標高グリッド JSON
 │   ├── dem_data.js             # dem_data.json JSデータ (オフライン/file://対応)
-│   └── slope_overlay.png       # 1m高精細 傾斜区分カラーオーバーレイ画像
+│   ├── slope_overlay.png       # 1m高精細 傾斜区分カラーオーバーレイ画像
+│   └── slope_data.js           # 傾斜区分カラー画像 JSデータ (GitHub Pages/オフライン100%表示対応)
 └── docs/
     └── cable_sag_calculation.md # 主索たわみ計算モデル & 集材可否判定仕様書
 ```
