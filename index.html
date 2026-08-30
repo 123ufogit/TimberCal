@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <!--
+    =====================================================================
+    石川県林業試験場 現地調査用 WebGIS アプリ
+    =====================================================================
+    用途   : 現地調査（GPS追尾・トラック記録・POI登録・GeoJSON出力）
+    動作環境: Android Chrome / Edge
+    使用ライブラリ: Leaflet 1.9.4（CDN）
+    =====================================================================
+  -->
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0,
+             maximum-scale=1.0, user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1a5c2a" />
+  <title>林業試験場 現地調査</title>
+
+  <!-- Leaflet CSS（CDN） -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <!-- アプリ CSS -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- 地図コンテナ -->
+  <div id="map"></div>
+
+  <!-- =====================================================================
+       上部情報バー：緯度・経度・ズーム・方位
+       ===================================================================== -->
+  <div id="info-bar">
+    <div class="info-item">
+      <span class="info-label">緯度</span>
+      <span class="info-value" id="disp-lat">---.------</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">経度</span>
+      <span class="info-value" id="disp-lng">---.------</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">ZOOM</span>
+      <span class="info-value" id="disp-zoom">--</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">方位</span>
+      <span class="info-value" id="disp-bearing">
+        <span id="compass-display">🧭</span>
+        <span id="compass-deg">---°</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       フローティングアクションボタン群（右側縦並び）
+       ===================================================================== -->
+  <div id="fab-container">
+    <button class="fab" id="btn-locate"      title="現在地へ移動">📍</button>
+    <button class="fab" id="btn-follow"      title="GPS追尾">🔒</button>
+    <button class="fab" id="btn-track-start" title="トラック記録開始">⏺</button>
+    <button class="fab" id="btn-track-stop"  title="トラック記録停止" disabled>⏹</button>
+    <button class="fab" id="btn-poi"         title="POI登録">📌</button>
+    <button class="fab" id="btn-cable"       title="架線シミュレーション（縦断面図）">📐</button>
+    <button class="fab" id="btn-export"      title="GeoJSON出力">💾</button>
+    <button class="fab" id="btn-layers"      title="レイヤ設定">🗂</button>
+    <button class="fab" id="btn-info"        title="操作説明・データ利用表記">ℹ</button>
+  </div>
+
+<!-- ★ 新しい凡例パネル（レイヤパネルとは別） -->
+<div id="legend-panel">
+  <button id="legend-toggle-btn">凡例 ▼</button>
+  <div id="legend-content">
+    <h4 class="legend-title">樹種凡例</h4>
+    <div id="legend-trees"></div>
+
+    <h4 class="legend-title">ゾーン凡例</h4>
+    <div id="legend-zoning"></div>
+
+    <h4 class="legend-title">傾斜区分凡例</h4>
+    <div id="legend-slope">
+      <div class="legend-item"><div class="legend-color" style="background:rgba(76,175,80,0.8);"></div><span>緩傾斜 (&lt;15°)</span></div>
+      <div class="legend-item"><div class="legend-color" style="background:rgba(255,235,59,0.8);"></div><span>中傾斜 (15〜30°)</span></div>
+      <div class="legend-item"><div class="legend-color" style="background:rgba(255,152,0,0.8);"></div><span>急傾斜 (30〜45°)</span></div>
+      <div class="legend-item"><div class="legend-color" style="background:rgba(244,67,54,0.8);"></div><span>極急傾斜 (&ge;45°)</span></div>
+    </div>
+  </div>
+</div>
+
+  
+  <!-- =====================================================================
+       下部ステータスバー
+       ===================================================================== -->
+  <div id="status-bar">
+    <span id="status-text">待機中</span>
+    <span id="track-info">トラック: 0点</span>
+  </div>
+
+  <!-- =====================================================================
+       レイヤコントロールパネル（右スライドイン）
+       ===================================================================== -->
+  <div id="panel-overlay"></div>
+
+  <div id="layer-panel">
+    <div id="layer-panel-header">
+      <span>🗂 レイヤ設定</span>
+      <button id="btn-close-panel">✕</button>
+    </div>
+
+    <!-- ベースマップ -->
+    <div class="layer-section">
+      <div class="layer-section-title">ベースマップ選択</div>
+      <div class="layer-row">
+        <input type="radio" name="basemap" class="layer-toggle" id="bm-gsi-std" value="std" checked />
+        <label class="layer-label" for="bm-gsi-std">🗾 国土地理院 標準地図</label>
+      </div>
+      <div class="layer-row">
+        <input type="radio" name="basemap" class="layer-toggle" id="bm-gsi-photo" value="photo" />
+        <label class="layer-label" for="bm-gsi-photo">📷 国土地理院 航空写真</label>
+      </div>
+    </div>
+
+    <!-- GeoJSONデータ -->
+    <div class="layer-section">
+      <div class="layer-section-title">GeoJSONデータ</div>
+
+      <!-- 樹木データ -->
+      <div class="layer-row">
+        <input type="checkbox" class="layer-toggle" id="toggle-trees" checked />
+        <label class="layer-label" for="toggle-trees">🌳 樹木データ</label>
+      </div>
+
+      <!-- ゾーニング -->
+      <div class="layer-row">
+        <input type="checkbox" class="layer-toggle" id="toggle-zoning" checked />
+        <label class="layer-label" for="toggle-zoning">📦 ゾーニング</label>
+      </div>
+      <div class="opacity-row">
+        <span class="opacity-label">透過率</span>
+        <input type="range" class="opacity-slider" id="slider-zoning"
+               min="0" max="100" value="50" />
+        <span class="opacity-value" id="val-zoning">50%</span>
+      </div>
+
+      <!-- 架線集材データ -->
+      <div class="layer-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #444; justify-content: space-between;">
+        <div style="display:flex; align-items:center;">
+          <input type="checkbox" class="layer-toggle" id="toggle-cable-data" checked />
+          <label class="layer-label" for="toggle-cable-data">📐 架線集材データ</label>
+        </div>
+        <button id="btn-panel-export-cable" title="GeoJSONエクスポート"
+          style="background:#ff6e40; color:#fff; border:none; border-radius:4px;
+                 padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer;">
+          💾 出力
+        </button>
+      </div>
+    </div>
+
+    <!-- オーバーレイ -->
+    <div class="layer-section">
+      <div class="layer-section-title">オーバーレイ</div>
+
+      <!-- 傾斜区分（高精細1m） -->
+      <div class="layer-row">
+        <input type="checkbox" class="layer-toggle" id="toggle-slope" />
+        <label class="layer-label" for="toggle-slope">📐 傾斜区分（高精細1m）</label>
+      </div>
+      <div class="opacity-row">
+        <span class="opacity-label">透過率</span>
+        <input type="range" class="opacity-slider" id="slider-slope"
+               min="0" max="100" value="40" />
+        <span class="opacity-value" id="val-slope">40%</span>
+      </div>
+
+      <!-- 森林資源20mメッシュ -->
+      <div class="layer-row">
+        <input type="checkbox" class="layer-toggle" id="toggle-fr" />
+        <label class="layer-label" for="toggle-fr">🌲 森林資源20mメッシュ</label>
+      </div>
+      <div class="opacity-row">
+        <span class="opacity-label">透過率</span>
+        <input type="range" class="opacity-slider" id="slider-fr"
+               min="0" max="100" value="70" />
+        <span class="opacity-value" id="val-fr">70%</span>
+      </div>
+    </div>
+
+    <!-- フィールドデータ -->
+    <div class="layer-section">
+      <div class="layer-section-title">フィールドデータ</div>
+      <div class="layer-row">
+        <input type="checkbox" class="layer-toggle" id="toggle-track" checked />
+        <label class="layer-label" for="toggle-track">🛤 トラック</label>
+      </div>
+      <div class="layer-row">
+        <input type="checkbox" class="layer-toggle" id="toggle-poi" checked />
+        <label class="layer-label" for="toggle-poi">📌 POI</label>
+      </div>
+    </div>
+
+    <!-- データ操作 -->
+    <div class="layer-section">
+      <div class="layer-section-title">データ操作</div>
+      <button id="btn-clear-track"
+        style="width:100%;padding:12px;background:#5d1a1a;color:#ffaaaa;
+               border:1px solid #8b2020;border-radius:6px;font-size:13px;
+               cursor:pointer;margin-bottom:8px;touch-action:manipulation;">
+        🗑 トラックをクリア
+      </button>
+      <button id="btn-clear-poi"
+        style="width:100%;padding:12px;background:#1a3d5d;color:#aaccff;
+               border:1px solid #205080;border-radius:6px;font-size:13px;
+               cursor:pointer;touch-action:manipulation;">
+        🗑 POIをクリア
+      </button>
+    </div>
+
+    <!-- アプリ情報 -->
+    <div class="layer-section" style="border-bottom:none;">
+      <div class="layer-section-title">アプリ情報</div>
+      <div style="color:#666;font-size:11px;line-height:1.8;">
+        石川県林業試験場 現地調査用<br>
+        Leaflet 1.9.4 / 国土地理院タイル<br>
+        林野庁 CS立体図・森林資源メッシュ
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       POI入力モーダル
+       ===================================================================== -->
+  <div id="poi-modal">
+    <div id="poi-modal-inner">
+      <h3>📌 POI登録</h3>
+      <label for="poi-name">名称</label>
+      <input type="text" id="poi-name"
+             placeholder="例：調査地点A" maxlength="50" />
+      <label for="poi-note">メモ</label>
+      <textarea id="poi-note"
+                placeholder="観察内容・特記事項など"></textarea>
+      <div id="poi-coords-display">座標取得中...</div>
+      <div class="modal-btn-row">
+        <button class="modal-btn" id="btn-poi-cancel">キャンセル</button>
+        <button class="modal-btn" id="btn-poi-ok">登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       架線集材シミュレーション & 縦断面図モーダル
+       ===================================================================== -->
+  <div id="cable-modal">
+    <div id="cable-modal-inner">
+      <div id="cable-modal-header">
+        <h3>📐 架線集材シミュレーション（縦断面図）</h3>
+        <button id="btn-close-cable-modal">✕</button>
+      </div>
+      <div id="cable-modal-body">
+        <div id="cable-summary-bar">
+          <div class="cable-summary-item">
+            <span class="cable-label">元柱索高 (地上+10m)</span>
+            <span class="cable-val" id="cable-start-ele">--- m</span>
+          </div>
+          <div class="cable-summary-item">
+            <span class="cable-label">先柱索高 (地上+10m)</span>
+            <span class="cable-val" id="cable-end-ele">--- m</span>
+          </div>
+          <div class="cable-summary-item">
+            <span class="cable-label">索高 標高差</span>
+            <span class="cable-val" id="cable-diff-ele">--- m</span>
+          </div>
+          <div class="cable-summary-item">
+            <span class="cable-label">水平距離</span>
+            <span class="cable-val" id="cable-dist-horiz">--- m</span>
+          </div>
+          <div class="cable-summary-item">
+            <span class="cable-label">主索斜距離</span>
+            <span class="cable-val" id="cable-dist-slope">--- m</span>
+          </div>
+          <div class="cable-summary-item">
+            <span class="cable-label">主索最大たわみ (1.5t荷重)</span>
+            <span class="cable-val" id="cable-max-sag">--- m</span>
+          </div>
+          <div class="cable-summary-item highlight-feasibility">
+            <span class="cable-label">架線集材 可否判定</span>
+            <span class="cable-val" id="cable-feasibility-status">---</span>
+          </div>
+        </div>
+        <!-- 収穫量試算セクション (幅40mバッファー) -->
+        <div id="cable-harvest-bar">
+          <div class="harvest-title">🌲 集材範囲 収穫量試算（左右各20m / 計40m幅）</div>
+          <div class="harvest-items">
+            <div class="harvest-item">
+              <span class="harvest-label">対象樹木</span>
+              <span class="harvest-val" id="harvest-tree-count">0 本</span>
+            </div>
+            <div class="harvest-item">
+              <span class="harvest-label">総立木材積</span>
+              <span class="harvest-val" id="harvest-gross-vol">0.0 m³</span>
+            </div>
+            <div class="harvest-item highlight">
+              <span class="harvest-label">搬出材積 (80%)</span>
+              <span class="harvest-val" id="harvest-net-vol">0.0 m³</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="cable-chart-container">
+          <canvas id="cable-profile-canvas" width="600" height="240"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       操作説明＆公共測量データ利用表記モーダル
+       ===================================================================== -->
+  <div id="info-modal">
+    <div id="info-modal-inner">
+      <div id="info-modal-header">
+        <h3>ℹ アプリ操作ガイド ＆ データ利用表記</h3>
+        <button id="btn-close-info-modal">✕</button>
+      </div>
+      <div id="info-modal-body">
+
+        <h4 class="info-sec-title">📖 アプリ操作説明 (User Manual)</h4>
+        <div class="info-box">
+          <ul class="info-list">
+            <li><b>地図操作・ナビゲーション:</b> 画面上のドラッグ・ピンチ操作でズーム・移動が可能です。左上の <code>＋ / －</code> ボタンでズーム調整できます。</li>
+            <li><b>現在地表示:</b> 右上の <code>📍</code> ボタンをタップすると、GPS現在位置を取得し地図中心にマーカー表示します。</li>
+            <li><b>ベースマップ＆レイヤー切り替え:</b> 右上の <code>🗂</code> ボタンで、国土地理院 標準地図 / 航空写真 の切り替え、樹木・ゾーニング・傾斜区分のON/OFFを切り替えられます。</li>
+            <li><b>凡例の確認:</b> 左下の <code>凡例 ▼</code> ボタンで、樹木データ (`trees.geojson`) の樹種別カラーアイコンおよび傾斜区分の凡例を表示できます。</li>
+            <li><b>架線集材シミュレーション:</b> 
+              <br>1. 右上の <code>📐</code> ボタンを押し、モードをONにします。
+              <br>2. 地図上で<b>1タップ目</b>で元柱（始点）、<b>2タップ目</b>で先柱（終点）を指定します。
+              <br>3. 自動的に地形断面図・索高（地上+10m）・集材範囲（左右20m/幅40m）および収穫量（本数・立木材積・搬出材積80%）が即座に算定されます。
+            </li>
+            <li><b>GeoJSONエクスポート:</b> 右上の <code>🗂</code> レイヤー設定内の「📐 架線集材データ」項目の <code>💾 出力</code> ボタンから、属性付きGeoJSONファイルをダウンロードできます。</li>
+          </ul>
+        </div>
+
+        <h4 class="info-sec-title">📜 公共測量データ・ベースマップ等の利用表記</h4>
+        <div class="info-box attribution">
+          <p>本GISアプリケーション「TimberCal」では、以下の公共測量データ、数値標高モデル（DEM）、およびオープンデータを使用しています。</p>
+          <table class="info-attr-table">
+            <thead>
+              <tr>
+                <th>データ名称</th>
+                <th>整備元 / 出典</th>
+                <th>内容・用途</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>数値標高モデル (DEM)</b></td>
+                <td>国土地理院 基盤地図情報 (07HD811 2mメッシュ)</td>
+                <td>地形縦断面図の作成、標高差・傾斜角度計算、元柱・先柱索高標高のサンプリング解析</td>
+              </tr>
+              <tr>
+                <td><b>基盤地図情報 / 電子国土基本図</b></td>
+                <td>国土地理院 (GSI Standard Tiles / Seamless Photo)</td>
+                <td>ベースマップ（標準地図・シームレス航空写真）の表示</td>
+              </tr>
+              <tr>
+                <td><b>陰影起伏・傾斜解析データ</b></td>
+                <td>国土地理院 陰影起伏データ / 金沢市07HD811 DEM解析</td>
+                <td>高精細1m傾斜区分オーバーレイレイヤーの表示</td>
+              </tr>
+              <tr>
+                <td><b>森林資源メッシュデータ</b></td>
+                <td>林野庁 森林資源20mメッシュデータ</td>
+                <td>森林資源20mメッシュグリッドのオーバーレイ表示</td>
+              </tr>
+              <tr>
+                <td><b>現地調査樹木データ</b></td>
+                <td>金沢市 調査地 trees.geojson (691件)</td>
+                <td>単木位置、樹種区分、樹高、胸高直径、単木材積の空間解析および集材量試算</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="attr-footer">
+            ※ 本ツールで生成される数値・断面プロファイル・収穫量はDEMおよび調査データに基づくシミュレーション値です。
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast"></div>
+
+  <!-- =====================================================================
+       JavaScript 読み込み
+       Leaflet本体 → アプリJS の順で読み込む（依存関係のため）
+       ===================================================================== -->
+  <!-- Leaflet & GeoTIFF ライブラリ -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin="">
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+  <script src="data/trees.js"></script>
+  <script src="data/dem_data.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
