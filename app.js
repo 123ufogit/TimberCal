@@ -341,51 +341,70 @@ function getZoneColor(properties) {
   return zoneColorCache[key];
 }
 
-fetch('zoning.geojson')
-  .then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  })
-  .then(data => {
-    zoningGeoJSON = L.geoJSON(data, {
+function renderZoningLayer(data) {
+  zoningGeoJSON = L.geoJSON(data, {
 
-      /* ポリゴン：ゾーン属性で色分け・初期透過率50% */
-      style: function (feature) {
-        const color = getZoneColor(feature.properties || {});
-        return {
-          fillColor: color, color: color,
-          weight: 2, opacity: 0.9, fillOpacity: 0.15,
-        };
-      },
+    /* ポリゴン：ゾーン属性で色分け・初期透過率50% */
+    style: function (feature) {
+      const color = getZoneColor(feature.properties || {});
+      return {
+        fillColor: color, color: color,
+        weight: 2, opacity: 0.9, fillOpacity: 0.15,
+      };
+    },
 
-      /* ツールチップ：ゾーン名と属性 */
-      onEachFeature: function (feature, layer) {
-        const p    = feature.properties || {};
-        const name = p.zone || p.name || p.type || 'ゾーン';
-        const lines = [`<b>📦 ${name}</b>`];
-        for (const [k, v] of Object.entries(p)) {
-          if (['zone','name','type'].includes(k)) continue;
-          lines.push(`${k}: ${v}`);
-        }
-        layer.bindTooltip(lines.join('<br>'),
-          { sticky: true, direction: 'top' });
-        layer.on('click', function (e) {
-          e.originalEvent.stopPropagation();
-        });
-        layer.interactive = false;
-      },
-    });
-
-    zoningLayerGroup.addLayer(zoningGeoJSON);
-    zoningGeoJSON.bringToBack();
-    buildZoningLegend(); 
-    showToast(`📦 ゾーニング読み込み完了（${data.features
-      ? data.features.length : '?'}件）`);
-  })
-  .catch(err => {
-    console.warn('zoning.geojson 読み込み失敗:', err);
-    showToast('⚠ zoning.geojson が見つかりません');
+    /* ツールチップ：ゾーン名と属性 */
+    onEachFeature: function (feature, layer) {
+      const p    = feature.properties || {};
+      const name = p.zone || p.name || p.type || 'ゾーン';
+      const lines = [`<b>📦 ${name}</b>`];
+      for (const [k, v] of Object.entries(p)) {
+        if (['zone','name','type'].includes(k)) continue;
+        lines.push(`${k}: ${v}`);
+      }
+      layer.bindTooltip(lines.join('<br>'),
+        { sticky: true, direction: 'top' });
+      layer.on('click', function (e) {
+        e.originalEvent.stopPropagation();
+      });
+      layer.interactive = false;
+    },
   });
+
+  zoningLayerGroup.addLayer(zoningGeoJSON);
+  zoningGeoJSON.bringToBack();
+  buildZoningLegend();
+  showToast(`📦 ゾーニング読み込み完了（${data.features
+    ? data.features.length : '?'}件）`);
+}
+
+async function loadZoningData() {
+  // 1. window.zoningGeoJsonData (data/zoning.js) からの即時ロード
+  if (typeof window !== 'undefined' && window.zoningGeoJsonData) {
+    console.log('Loaded zoning from window.zoningGeoJsonData');
+    renderZoningLayer(window.zoningGeoJsonData);
+    return;
+  }
+
+  // 2. fetchJson での非同期取得
+  try {
+    const data = await fetchJson([
+      'data/zoning.geojson',
+      './data/zoning.geojson',
+      'zoning.geojson'
+    ]);
+    renderZoningLayer(data);
+  } catch (err) {
+    console.warn('data/zoning.geojson 読み込み失敗:', err);
+    if (window.location.protocol === 'file:') {
+      showToast('⚠ file://プロトコルではセキュリティ制限によりzoning.geojsonが直接フェッチできません。\ndata/zoning.js またはローカルWebサーバーをご利用ください。');
+    } else {
+      showToast('⚠ data/zoning.geojson が見つかりません');
+    }
+  }
+}
+
+loadZoningData();
 
 
 
